@@ -91,12 +91,13 @@ def card_noticia(noticia):
     </div>"""
 
 
-def gerar_html(noticias_ia, noticias_tech):
+def gerar_html(noticias_ia, noticias_tech, noticias_hack):
     hoje = datetime.now()
     data_str = f"{hoje.day} de {MESES_PT[hoje.month - 1]} de {hoje.year}"
 
-    cards_ia   = "".join(card_noticia(n) for n in noticias_ia)  if noticias_ia   else "<p style='color:#666'>Nenhuma notícia encontrada.</p>"
+    cards_ia   = "".join(card_noticia(n) for n in noticias_ia)   if noticias_ia   else "<p style='color:#666'>Nenhuma notícia encontrada.</p>"
     cards_tech = "".join(card_noticia(n) for n in noticias_tech) if noticias_tech else "<p style='color:#666'>Nenhuma notícia encontrada.</p>"
+    cards_hack = "".join(card_noticia(n) for n in noticias_hack) if noticias_hack else "<p style='color:#666'>Nenhuma notícia encontrada.</p>"
 
     return f"""<!DOCTYPE html>
 <html>
@@ -135,6 +136,12 @@ def gerar_html(noticias_ia, noticias_tech):
           <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
                     letter-spacing:2px;text-transform:uppercase;">💻 Tecnologia</p>
           {cards_tech}
+
+          <hr style="border:none;border-top:1px solid #222;margin:24px 0;">
+
+          <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
+                    letter-spacing:2px;text-transform:uppercase;">🏆 Hackathons / Startups</p>
+          {cards_hack}
 
         </td></tr>
 
@@ -177,10 +184,17 @@ if __name__ == "__main__":
     print(f"  {len(noticias_ia)} notícia(s).")
 
     print("💻 Buscando notícias de tecnologia...")
-    noticias_tech = buscar_noticias("smartphone software hardware startup", 2)
+    noticias_tech = buscar_noticias("tecnologia", 1)
     print(f"  {len(noticias_tech)} notícia(s).")
+
+    print("🏆 Buscando hackathons na Paraíba...")
+    noticias_hack = buscar_noticias("hackathon Paraíba 2026", 1)
+    if not noticias_hack:
+        print("  Nenhum hackathon, buscando startups...")
+        noticias_hack = buscar_noticias("startup", 1)
+    print(f"  {len(noticias_hack)} notícia(s).")
 
     print("📧 Enviando email...")
     service = get_gmail_service()
-    html = gerar_html(noticias_ia, noticias_tech)
+    html = gerar_html(noticias_ia, noticias_tech, noticias_hack)
     enviar_email(service, html)
