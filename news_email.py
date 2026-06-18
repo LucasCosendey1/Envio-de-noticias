@@ -170,11 +170,11 @@ def enviar_email(service, html):
 
 if __name__ == "__main__":
     print("🤖 Buscando notícias de IA...")
-    noticias_ia = buscar_noticias("inteligência artificial", 1)
+    noticias_ia = buscar_noticias("inteligência artificial machine learning", 1)
     print(f"  {len(noticias_ia)} notícia(s).")
 
     print("💻 Buscando notícias de tecnologia...")
-    noticias_tech = buscar_noticias("tecnologia", 2)
+    noticias_tech = buscar_noticias("smartphone software hardware startup", 2)
     print(f"  {len(noticias_tech)} notícia(s).")
 
     print("📧 Enviando email...")
