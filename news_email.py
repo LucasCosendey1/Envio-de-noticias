@@ -32,15 +32,17 @@ def get_gmail_service():
 # ─── NewsAPI ──────────────────────────────────────────────────────────────────
 
 def buscar_noticias(query, quantidade):
-    url = "https://newsapi.org/v2/top-headlines"
+    url = "https://newsapi.org/v2/everything"
     params = {
         "apiKey": NEWSAPI_KEY,
         "q": query,
         "language": "pt",
+        "sortBy": "publishedAt",
         "pageSize": quantidade,
     }
     resp = requests.get(url, params=params, timeout=10)
     data = resp.json()
+    print(f"  NewsAPI ({query}): status={data.get('status')} total={data.get('totalResults')}")
 
     artigos = data.get("articles", [])
 
@@ -48,7 +50,9 @@ def buscar_noticias(query, quantidade):
     if not artigos:
         params["language"] = "en"
         resp = requests.get(url, params=params, timeout=10)
-        artigos = resp.json().get("articles", [])
+        data = resp.json()
+        print(f"  NewsAPI ({query} en): status={data.get('status')} total={data.get('totalResults')}")
+        artigos = data.get("articles", [])
 
     resultado = []
     for a in artigos[:quantidade]:
