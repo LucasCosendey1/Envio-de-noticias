@@ -1,0 +1,32 @@
+name: Enviar Notícias Diárias
+
+on:
+  schedule:
+    # Todo dia às 8h (horário de Brasília = 11h UTC)
+    - cron: "0 11 * * *"
+  workflow_dispatch: # permite rodar manualmente pelo painel do GitHub
+
+jobs:
+  send-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: pip install -r news-automation/requirements.txt
+
+      - name: Executar script de notícias
+        env:
+          NEWSAPI_KEY:          ${{ secrets.NEWSAPI_KEY }}
+          GMAIL_TOKEN_JSON:     ${{ secrets.GMAIL_TOKEN_JSON }}
+          EMAIL_DESTINATARIO:   ${{ secrets.EMAIL_DESTINATARIO }}
+          EMAIL_REMETENTE:      ${{ secrets.EMAIL_REMETENTE }}
+          NEWS_QUERY:           ${{ secrets.NEWS_QUERY }}
+        run: python news-automation/news_email.py
