@@ -60,7 +60,7 @@ def gemini_com_retry(prompt, tentativas=3, espera=45):
     for i in range(tentativas):
         try:
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.0-flash-lite",
                 contents=prompt,
                 config=SEARCH_CONFIG,
             )
