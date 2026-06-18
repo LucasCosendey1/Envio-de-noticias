@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import re
+import time
 import requests
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
@@ -261,9 +262,13 @@ if __name__ == "__main__":
     hackathons = buscar_hackathons_paraiba()
     print(f"  {len(hackathons)} encontrado(s).")
 
+    time.sleep(10)
+
     print("🤖 Buscando notícias de IA...")
     noticias_ia = buscar_noticias_gemini("inteligência artificial", 1)
     print(f"  {len(noticias_ia)} notícia(s).")
+
+    time.sleep(10)
 
     print("💻 Buscando notícias de tecnologia...")
     noticias_tech = buscar_noticias_gemini("tecnologia", 2)
