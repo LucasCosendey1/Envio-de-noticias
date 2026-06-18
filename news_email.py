@@ -85,8 +85,9 @@ def resumir_artigo(titulo, descricao, url):
     else:
         conteudo = f"Descrição: {descricao}"
 
-    prompt = f"""Leia o conteúdo abaixo e escreva um resumo em português com no máximo 2 parágrafos curtos.
-Seja objetivo e direto. Não use markdown, apenas texto simples.
+    prompt = f"""Você é um jornalista. Leia o conteúdo abaixo e explique COM SUAS PRÓPRIAS PALAVRAS o que está acontecendo.
+Escreva em português, em no máximo 2 parágrafos curtos. Não copie frases do texto original.
+Explique o contexto, o que aconteceu e por que é relevante. Apenas texto simples, sem markdown.
 
 Título: {titulo}
 {conteudo}"""
@@ -308,11 +309,11 @@ if __name__ == "__main__":
     print(f"  {len(hackathons)} hackathon(s) encontrado(s).")
 
     print("📰 Buscando notícias de IA...")
-    artigos_ia = buscar_noticias("inteligencia artificial brasil", count=1)
+    artigos_ia = buscar_noticias("ChatGPT OR \"inteligência artificial\" OR \"IA generativa\" OR OpenAI OR Gemini", count=1)
     artigo_ia = artigos_ia[0] if artigos_ia else {}
 
     print("📰 Buscando notícias de tecnologia...")
-    artigos_tech = buscar_noticias("tecnologia brasil", count=2)
+    artigos_tech = buscar_noticias("tecnologia OR startups OR \"big tech\" OR Apple OR Google OR Microsoft OR Meta", count=2)
 
     print("✍️  Resumindo artigos com Gemini...")
     resumo_ia = resumir_artigo(
