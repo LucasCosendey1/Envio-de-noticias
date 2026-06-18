@@ -114,7 +114,7 @@ def gerar_html(noticias_ia, noticias_tech, noticias_hack):
               <td>
                 <p style="margin:0;color:#FFD60A;font-size:11px;font-weight:700;
                           letter-spacing:3px;text-transform:uppercase;">Honey Labs</p>
-                <h1 style="margin:8px 0 0;color:#fff;font-size:24px;font-weight:700;">📰 Notícias do dia</h1>
+                <h1 style="margin:8px 0 0;color:#fff;font-size:24px;font-weight:700;">Notícias do dia</h1>
               </td>
               <td align="right">
                 <div style="background:#FFD60A;border-radius:12px;padding:10px 16px;">
@@ -128,19 +128,19 @@ def gerar_html(noticias_ia, noticias_tech, noticias_hack):
         <tr><td style="background:#111;padding:32px 40px;">
 
           <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
-                    letter-spacing:2px;text-transform:uppercase;">🤖 Inteligência Artificial</p>
+                    letter-spacing:2px;text-transform:uppercase;">Inteligência Artificial</p>
           {cards_ia}
 
           <hr style="border:none;border-top:1px solid #222;margin:24px 0;">
 
           <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
-                    letter-spacing:2px;text-transform:uppercase;">💻 Tecnologia</p>
+                    letter-spacing:2px;text-transform:uppercase;">Tecnologia</p>
           {cards_tech}
 
           <hr style="border:none;border-top:1px solid #222;margin:24px 0;">
 
           <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
-                    letter-spacing:2px;text-transform:uppercase;">🏆 Hackathons / Startups</p>
+                    letter-spacing:2px;text-transform:uppercase;">Hackathons / Startups</p>
           {cards_hack}
 
         </td></tr>
@@ -179,15 +179,15 @@ def enviar_email(service, html):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("🤖 Buscando notícias de IA...")
+    print(" Buscando notícias de IA...")
     noticias_ia = buscar_noticias("inteligência artificial machine learning", 1)
     print(f"  {len(noticias_ia)} notícia(s).")
 
-    print("💻 Buscando notícias de tecnologia...")
+    print(" Buscando notícias de tecnologia...")
     noticias_tech = buscar_noticias("tecnologia", 1)
     print(f"  {len(noticias_tech)} notícia(s).")
 
-    print("🏆 Buscando hackathons na Paraíba...")
+    print(" Buscando hackathons na Paraíba...")
     noticias_hack = buscar_noticias("hackathon Paraíba 2026", 1)
     if not noticias_hack:
         print("  Nenhum hackathon, buscando startups...")
