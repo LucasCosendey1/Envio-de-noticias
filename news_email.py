@@ -1,27 +1,21 @@
 import base64
 import json
 import os
-import re
-import time
 import requests
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from google import genai
-from google.genai import types
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 # ─── Configuração ─────────────────────────────────────────────────────────────
 
-GEMINI_API_KEY  = os.environ["GEMINI_API_KEY"]
-DESTINATARIO    = os.environ.get("EMAIL_DESTINATARIO", "lukecosendey@gmail.com")
-REMETENTE       = os.environ.get("EMAIL_REMETENTE", "honeylabsai@gmail.com")
-SCOPES          = ["https://www.googleapis.com/auth/gmail.send"]
-
-client = genai.Client(api_key=GEMINI_API_KEY)
+NEWSAPI_KEY  = os.environ["NEWSAPI_KEY"]
+DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "lukecosendey@gmail.com")
+REMETENTE    = os.environ.get("EMAIL_REMETENTE", "honeylabsai@gmail.com")
+SCOPES       = ["https://www.googleapis.com/auth/gmail.send"]
 
 # ─── Gmail ────────────────────────────────────────────────────────────────────
 
@@ -35,104 +29,36 @@ def get_gmail_service():
         creds.refresh(Request())
     return build("gmail", "v1", credentials=creds)
 
-# ─── Gemini com Google Search ─────────────────────────────────────────────────
+# ─── NewsAPI ──────────────────────────────────────────────────────────────────
 
-SEARCH_CONFIG = types.GenerateContentConfig(
-    tools=[types.Tool(google_search=types.GoogleSearch())]
-)
+def buscar_noticias(query, quantidade):
+    url = "https://newsapi.org/v2/top-headlines"
+    params = {
+        "apiKey": NEWSAPI_KEY,
+        "q": query,
+        "language": "pt",
+        "pageSize": quantidade,
+    }
+    resp = requests.get(url, params=params, timeout=10)
+    data = resp.json()
 
-def extrair_json_lista(texto):
-    """Extrai uma lista JSON do texto, mesmo dentro de blocos markdown."""
-    # Remove blocos ```json ... ```
-    texto = re.sub(r'```(?:json)?\s*', '', texto).strip()
-    # Tenta encontrar [ ... ]
-    match = re.search(r'\[.*\]', texto, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except Exception:
-            pass
-    return []
+    artigos = data.get("articles", [])
 
+    # Fallback: se não vier nada em pt, tenta em inglês
+    if not artigos:
+        params["language"] = "en"
+        resp = requests.get(url, params=params, timeout=10)
+        artigos = resp.json().get("articles", [])
 
-def gemini_com_retry(prompt, tentativas=3, espera=45):
-    """Chama Gemini com retry automático em caso de 429."""
-    for i in range(tentativas):
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.0-flash-lite",
-                contents=prompt,
-                config=SEARCH_CONFIG,
-            )
-            return response.text.strip()
-        except Exception as e:
-            msg = str(e)
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                if i < tentativas - 1:
-                    print(f"  Rate limit, aguardando {espera}s...")
-                    time.sleep(espera)
-                else:
-                    raise
-            else:
-                raise
-    return ""
-
-
-def buscar_noticias_gemini(tema, quantidade):
-    """Usa Gemini + Google Search para buscar notícias recentes e resumir."""
-    hoje = datetime.now().strftime("%d/%m/%Y")
-    prompt = f"""Hoje é {hoje}. Pesquise na internet as {quantidade} notícia(s) mais recente(s) sobre "{tema}" dos últimos 2 dias.
-
-Para cada notícia encontrada, retorne EXATAMENTE neste formato JSON:
-[
-  {{
-    "titulo": "Título da notícia",
-    "fonte": "Nome do site/jornal",
-    "resumo": "Explique com suas próprias palavras o que aconteceu, por que é relevante e qual o impacto. Máximo 3 frases. Não copie o texto original.",
-    "link": "URL da notícia"
-  }}
-]
-
-Retorne APENAS o JSON, sem texto adicional. Foque em notícias relevantes e recentes, evite artigos genéricos ou digests."""
-
-    try:
-        texto = gemini_com_retry(prompt)
-        print(f"  Resposta Gemini ({tema}):", texto[:300])
-        return extrair_json_lista(texto)
-    except Exception as e:
-        print(f"Erro ao buscar notícias de {tema}: {e}")
-        return []
-
-
-def buscar_hackathons_paraiba():
-    """Usa Gemini + Google Search para buscar hackathons futuros na Paraíba."""
-    hoje = datetime.now().strftime("%d/%m/%Y")
-    prompt = f"""Hoje é {hoje}. Pesquise na internet hackathons na Paraíba (Brasil) que:
-1. Ainda NÃO aconteceram (eventos futuros)
-2. As inscrições ainda estão abertas OU ainda não foram abertas
-
-Para cada hackathon encontrado, retorne EXATAMENTE neste formato JSON:
-[
-  {{
-    "nome": "Nome do hackathon",
-    "tema": "Tema principal",
-    "quando": "Data do evento",
-    "inscricoes": "Período de inscrições",
-    "requisitos": "Requisitos se houver, senão 'Não informado'",
-    "link": "Link para inscrição ou página oficial"
-  }}
-]
-
-Se não encontrar nenhum, retorne: []
-Retorne APENAS o JSON, sem texto adicional."""
-
-    try:
-        texto = gemini_com_retry(prompt)
-        print("  Resposta Gemini (hackathons):", texto[:300])
-        return extrair_json_lista(texto)
-    except Exception as e:
-        print(f"Erro ao buscar hackathons: {e}")
-        return []
+    resultado = []
+    for a in artigos[:quantidade]:
+        resultado.append({
+            "titulo": a.get("title") or "Sem título",
+            "fonte":  (a.get("source") or {}).get("name") or "",
+            "resumo": a.get("description") or a.get("content") or "",
+            "link":   a.get("url") or "#",
+        })
+    return resultado
 
 # ─── HTML ─────────────────────────────────────────────────────────────────────
 
@@ -140,10 +66,10 @@ MESES_PT = ["janeiro","fevereiro","março","abril","maio","junho",
             "julho","agosto","setembro","outubro","novembro","dezembro"]
 
 def card_noticia(noticia):
-    titulo  = noticia.get("titulo", "Sem título")
-    fonte   = noticia.get("fonte", "")
-    resumo  = noticia.get("resumo", "").replace("\n", "<br>")
-    link    = noticia.get("link", "#")
+    titulo = noticia.get("titulo", "Sem título")
+    fonte  = noticia.get("fonte", "")
+    resumo = (noticia.get("resumo") or "").replace("\n", "<br>")
+    link   = noticia.get("link", "#")
 
     return f"""
     <div style="background:#111;border-radius:12px;padding:20px 24px;
@@ -158,44 +84,12 @@ def card_noticia(noticia):
     </div>"""
 
 
-def secao_hackathons(hackathons):
-    if not hackathons:
-        return ""
-
-    cards = ""
-    for h in hackathons:
-        req = h.get("requisitos", "")
-        req_html = f'<p style="margin:4px 0;color:#888;font-size:12px;">📋 <strong style="color:#ccc;">Requisitos:</strong> {req}</p>' if req and req != "Não informado" else ""
-        cards += f"""
-        <div style="background:#1a1a00;border-radius:12px;padding:20px 24px;
-                    margin-bottom:16px;border-left:3px solid #FFD60A;">
-          <p style="margin:0 0 6px;color:#FFD60A;font-size:11px;
-                    font-weight:700;letter-spacing:1px;text-transform:uppercase;">🏆 Hackathon · Paraíba</p>
-          <h3 style="margin:0 0 12px;color:#fff;font-size:17px;font-weight:700;">{h.get("nome","")}</h3>
-          <p style="margin:4px 0;color:#888;font-size:12px;">🎯 <strong style="color:#ccc;">Tema:</strong> {h.get("tema","")}</p>
-          <p style="margin:4px 0;color:#888;font-size:12px;">📅 <strong style="color:#ccc;">Quando:</strong> {h.get("quando","")}</p>
-          <p style="margin:4px 0;color:#888;font-size:12px;">📝 <strong style="color:#ccc;">Inscrições:</strong> {h.get("inscricoes","")}</p>
-          {req_html}
-          <a href="{h.get("link","#")}" style="display:inline-block;margin-top:14px;
-             background:#FFD60A;color:#111;font-size:12px;font-weight:700;
-             padding:8px 16px;border-radius:8px;text-decoration:none;">Saiba mais →</a>
-        </div>"""
-
-    return f"""
-    <div style="margin-bottom:32px;">
-      <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
-                letter-spacing:2px;text-transform:uppercase;">🏆 Hackathons na Paraíba</p>
-      {cards}
-    </div>
-    <hr style="border:none;border-top:1px solid #222;margin-bottom:32px;">"""
-
-
-def gerar_html(noticias_ia, noticias_tech, hackathons):
+def gerar_html(noticias_ia, noticias_tech):
     hoje = datetime.now()
     data_str = f"{hoje.day} de {MESES_PT[hoje.month - 1]} de {hoje.year}"
 
-    cards_ia   = "".join(card_noticia(n) for n in noticias_ia)
-    cards_tech = "".join(card_noticia(n) for n in noticias_tech)
+    cards_ia   = "".join(card_noticia(n) for n in noticias_ia)  if noticias_ia   else "<p style='color:#666'>Nenhuma notícia encontrada.</p>"
+    cards_tech = "".join(card_noticia(n) for n in noticias_tech) if noticias_tech else "<p style='color:#666'>Nenhuma notícia encontrada.</p>"
 
     return f"""<!DOCTYPE html>
 <html>
@@ -224,7 +118,6 @@ def gerar_html(noticias_ia, noticias_tech, hackathons):
         </td></tr>
 
         <tr><td style="background:#111;padding:32px 40px;">
-          {secao_hackathons(hackathons)}
 
           <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
                     letter-spacing:2px;text-transform:uppercase;">🤖 Inteligência Artificial</p>
@@ -235,12 +128,13 @@ def gerar_html(noticias_ia, noticias_tech, hackathons):
           <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
                     letter-spacing:2px;text-transform:uppercase;">💻 Tecnologia</p>
           {cards_tech}
+
         </td></tr>
 
         <tr><td style="background:#0d0d0d;border-radius:0 0 16px 16px;
                        padding:20px 40px;border-top:1px solid #1a1a1a;">
           <p style="margin:0;color:#444;font-size:12px;">
-            Gerado por Gemini com Google Search ·
+            Powered by NewsAPI ·
             <a href="https://www.honeylabs.com.br" style="color:#FFD60A;text-decoration:none;">Honey Labs</a>
           </p>
         </td></tr>
@@ -271,15 +165,15 @@ def enviar_email(service, html):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    hackathons = []
-
-    print("🤖 Buscando notícia de IA...")
-    noticias_ia = buscar_noticias_gemini("inteligência artificial", 1)
+    print("🤖 Buscando notícias de IA...")
+    noticias_ia = buscar_noticias("inteligência artificial", 1)
     print(f"  {len(noticias_ia)} notícia(s).")
 
-    noticias_tech = []
+    print("💻 Buscando notícias de tecnologia...")
+    noticias_tech = buscar_noticias("tecnologia", 2)
+    print(f"  {len(noticias_tech)} notícia(s).")
 
     print("📧 Enviando email...")
     service = get_gmail_service()
-    html = gerar_html(noticias_ia, noticias_tech, hackathons)
+    html = gerar_html(noticias_ia, noticias_tech)
     enviar_email(service, html)
