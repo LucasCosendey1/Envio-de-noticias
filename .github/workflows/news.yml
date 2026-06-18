@@ -2,8 +2,9 @@ name: Enviar Notícias Diárias
 
 on:
   schedule:
-    - cron: "0 10 * * *"
-  workflow_dispatch:
+    # Todo dia às 8h (horário de Brasília = 11h UTC)
+    - cron: "0 11 * * *"
+  workflow_dispatch: # permite rodar manualmente pelo painel do GitHub
 
 jobs:
   send-news:
@@ -24,6 +25,7 @@ jobs:
       - name: Executar script de notícias
         env:
           NEWSAPI_KEY:          ${{ secrets.NEWSAPI_KEY }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           GMAIL_TOKEN_JSON:     ${{ secrets.GMAIL_TOKEN_JSON }}
           EMAIL_DESTINATARIO:   ${{ secrets.EMAIL_DESTINATARIO }}
           EMAIL_REMETENTE:      ${{ secrets.EMAIL_REMETENTE }}
