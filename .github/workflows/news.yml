@@ -25,9 +25,7 @@ jobs:
       - name: Executar script de notícias
         env:
           NEWSAPI_KEY:          ${{ secrets.NEWSAPI_KEY }}
-          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           GMAIL_TOKEN_JSON:     ${{ secrets.GMAIL_TOKEN_JSON }}
           EMAIL_DESTINATARIO:   ${{ secrets.EMAIL_DESTINATARIO }}
           EMAIL_REMETENTE:      ${{ secrets.EMAIL_REMETENTE }}
-          NEWS_QUERY:           ${{ secrets.NEWS_QUERY }}
         run: python news_email.py
