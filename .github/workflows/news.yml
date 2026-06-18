@@ -2,9 +2,8 @@ name: Enviar Notícias Diárias
 
 on:
   schedule:
-    # Todo dia às 8h (horário de Brasília = 11h UTC)
     - cron: "0 11 * * *"
-  workflow_dispatch: # permite rodar manualmente pelo painel do GitHub
+  workflow_dispatch:
 
 jobs:
   send-news:
@@ -20,7 +19,7 @@ jobs:
           python-version: "3.11"
 
       - name: Instalar dependências
-        run: pip install -r news-automation/requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Executar script de notícias
         env:
@@ -29,4 +28,4 @@ jobs:
           EMAIL_DESTINATARIO:   ${{ secrets.EMAIL_DESTINATARIO }}
           EMAIL_REMETENTE:      ${{ secrets.EMAIL_REMETENTE }}
           NEWS_QUERY:           ${{ secrets.NEWS_QUERY }}
-        run: python news-automation/news_email.py
+        run: python news_email.py
