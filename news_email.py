@@ -31,12 +31,14 @@ def get_gmail_service():
 
 # ─── NewsAPI ──────────────────────────────────────────────────────────────────
 
+FONTES_TECH_BR = "tecmundo.com.br,olhardigital.com.br,canaltech.com.br,techtudo.globo.com,startups.com.br"
+
 def buscar_noticias(query, quantidade):
     url = "https://newsapi.org/v2/everything"
     params = {
         "apiKey": NEWSAPI_KEY,
         "q": query,
-        "language": "pt",
+        "sources": FONTES_TECH_BR,
         "sortBy": "publishedAt",
         "pageSize": quantidade,
     }
@@ -46,12 +48,13 @@ def buscar_noticias(query, quantidade):
 
     artigos = data.get("articles", [])
 
-    # Fallback: se não vier nada em pt, tenta em inglês
+    # Fallback: sem filtro de fonte, mas só português
     if not artigos:
-        params["language"] = "en"
+        params.pop("sources")
+        params["language"] = "pt"
         resp = requests.get(url, params=params, timeout=10)
         data = resp.json()
-        print(f"  NewsAPI ({query} en): status={data.get('status')} total={data.get('totalResults')}")
+        print(f"  NewsAPI fallback pt: status={data.get('status')} total={data.get('totalResults')}")
         artigos = data.get("articles", [])
 
     resultado = []
