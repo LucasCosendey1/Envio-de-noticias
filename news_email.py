@@ -5,7 +5,8 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -19,7 +20,7 @@ REMETENTE         = os.environ.get("EMAIL_REMETENTE", "honeylabsai@gmail.com")
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ─── Gmail ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,6 @@ def buscar_noticias(query, count=1):
 
 def resumir_artigo(titulo, descricao, url):
     """Usa Gemini para resumir o artigo em até 2 parágrafos."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
     prompt = f"""Escreva um resumo em português do artigo abaixo em no máximo 2 parágrafos curtos.
 Seja objetivo e direto. Não use markdown, apenas texto simples.
 
@@ -63,7 +63,10 @@ Título: {titulo}
 Descrição: {descricao}
 Link: {url}"""
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
         return response.text.strip()
     except Exception as e:
         return descricao or "Sem resumo disponível."
@@ -71,10 +74,7 @@ Link: {url}"""
 
 def buscar_hackathons_paraiba():
     """Usa Gemini com Google Search para buscar hackathons na Paraíba."""
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        tools="google_search_retrieval",
-    )
+    import json, re
     prompt = """Pesquise na internet sobre hackathons na Paraíba (Brasil) que:
 1. Ainda NÃO aconteceram (eventos futuros)
 2. As inscrições ainda estão abertas OU ainda não foram abertas
@@ -95,10 +95,14 @@ Se não encontrar nenhum hackathon futuro relevante, retorne: []
 Retorne APENAS o JSON, sem texto adicional."""
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())]
+            ),
+        )
         texto = response.text.strip()
-        # Extrair JSON da resposta
-        import json, re
         match = re.search(r'\[.*\]', texto, re.DOTALL)
         if match:
             return json.loads(match.group())
