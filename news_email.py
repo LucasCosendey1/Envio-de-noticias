@@ -55,6 +55,29 @@ def extrair_json_lista(texto):
     return []
 
 
+def gemini_com_retry(prompt, tentativas=3, espera=45):
+    """Chama Gemini com retry automático em caso de 429."""
+    for i in range(tentativas):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+                config=SEARCH_CONFIG,
+            )
+            return response.text.strip()
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                if i < tentativas - 1:
+                    print(f"  Rate limit, aguardando {espera}s...")
+                    time.sleep(espera)
+                else:
+                    raise
+            else:
+                raise
+    return ""
+
+
 def buscar_noticias_gemini(tema, quantidade):
     """Usa Gemini + Google Search para buscar notícias recentes e resumir."""
     hoje = datetime.now().strftime("%d/%m/%Y")
@@ -73,12 +96,7 @@ Para cada notícia encontrada, retorne EXATAMENTE neste formato JSON:
 Retorne APENAS o JSON, sem texto adicional. Foque em notícias relevantes e recentes, evite artigos genéricos ou digests."""
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=SEARCH_CONFIG,
-        )
-        texto = response.text.strip()
+        texto = gemini_com_retry(prompt)
         print(f"  Resposta Gemini ({tema}):", texto[:300])
         return extrair_json_lista(texto)
     except Exception as e:
@@ -109,12 +127,7 @@ Se não encontrar nenhum, retorne: []
 Retorne APENAS o JSON, sem texto adicional."""
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=SEARCH_CONFIG,
-        )
-        texto = response.text.strip()
+        texto = gemini_com_retry(prompt)
         print("  Resposta Gemini (hackathons):", texto[:300])
         return extrair_json_lista(texto)
     except Exception as e:
@@ -258,21 +271,13 @@ def enviar_email(service, html):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("🔍 Buscando hackathons na Paraíba...")
-    hackathons = buscar_hackathons_paraiba()
-    print(f"  {len(hackathons)} encontrado(s).")
+    hackathons = []
 
-    time.sleep(10)
-
-    print("🤖 Buscando notícias de IA...")
+    print("🤖 Buscando notícia de IA...")
     noticias_ia = buscar_noticias_gemini("inteligência artificial", 1)
     print(f"  {len(noticias_ia)} notícia(s).")
 
-    time.sleep(10)
-
-    print("💻 Buscando notícias de tecnologia...")
-    noticias_tech = buscar_noticias_gemini("tecnologia", 2)
-    print(f"  {len(noticias_tech)} notícia(s).")
+    noticias_tech = []
 
     print("📧 Enviando email...")
     service = get_gmail_service()
