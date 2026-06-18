@@ -40,6 +40,20 @@ SEARCH_CONFIG = types.GenerateContentConfig(
     tools=[types.Tool(google_search=types.GoogleSearch())]
 )
 
+def extrair_json_lista(texto):
+    """Extrai uma lista JSON do texto, mesmo dentro de blocos markdown."""
+    # Remove blocos ```json ... ```
+    texto = re.sub(r'```(?:json)?\s*', '', texto).strip()
+    # Tenta encontrar [ ... ]
+    match = re.search(r'\[.*\]', texto, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except Exception:
+            pass
+    return []
+
+
 def buscar_noticias_gemini(tema, quantidade):
     """Usa Gemini + Google Search para buscar notícias recentes e resumir."""
     hoje = datetime.now().strftime("%d/%m/%Y")
@@ -64,10 +78,8 @@ Retorne APENAS o JSON, sem texto adicional. Foque em notícias relevantes e rece
             config=SEARCH_CONFIG,
         )
         texto = response.text.strip()
-        match = re.search(r'\[.*\]', texto, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return []
+        print(f"  Resposta Gemini ({tema}):", texto[:300])
+        return extrair_json_lista(texto)
     except Exception as e:
         print(f"Erro ao buscar notícias de {tema}: {e}")
         return []
@@ -102,10 +114,8 @@ Retorne APENAS o JSON, sem texto adicional."""
             config=SEARCH_CONFIG,
         )
         texto = response.text.strip()
-        match = re.search(r'\[.*\]', texto, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return []
+        print("  Resposta Gemini (hackathons):", texto[:300])
+        return extrair_json_lista(texto)
     except Exception as e:
         print(f"Erro ao buscar hackathons: {e}")
         return []
