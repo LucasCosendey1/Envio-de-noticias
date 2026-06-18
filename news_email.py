@@ -1,9 +1,11 @@
 import base64
 import os
+import re
 import requests
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from bs4 import BeautifulSoup
 
 from google import genai
 from google.genai import types
@@ -54,14 +56,41 @@ def buscar_noticias(query, count=1):
 
 # ─── Gemini ───────────────────────────────────────────────────────────────────
 
+def extrair_texto_pagina(url):
+    """Baixa a página e extrai o texto principal."""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"}
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # Remove elementos desnecessários
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+            tag.decompose()
+
+        # Pega parágrafos com conteúdo relevante
+        paragrafos = [p.get_text(strip=True) for p in soup.find_all("p") if len(p.get_text(strip=True)) > 80]
+        texto = "\n".join(paragrafos[:30])  # máximo 30 parágrafos
+        return texto[:6000]  # limita para não estourar o contexto do Gemini
+    except Exception as e:
+        return ""
+
+
 def resumir_artigo(titulo, descricao, url):
-    """Usa Gemini para resumir o artigo em até 2 parágrafos."""
-    prompt = f"""Escreva um resumo em português do artigo abaixo em no máximo 2 parágrafos curtos.
+    """Baixa a página e usa Gemini para resumir o conteúdo real."""
+    texto_pagina = extrair_texto_pagina(url)
+
+    if texto_pagina:
+        conteudo = f"Conteúdo da página:\n{texto_pagina}"
+    else:
+        conteudo = f"Descrição: {descricao}"
+
+    prompt = f"""Leia o conteúdo abaixo e escreva um resumo em português com no máximo 2 parágrafos curtos.
 Seja objetivo e direto. Não use markdown, apenas texto simples.
 
 Título: {titulo}
-Descrição: {descricao}
-Link: {url}"""
+{conteudo}"""
+
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash",
@@ -69,7 +98,7 @@ Link: {url}"""
         )
         return response.text.strip()
     except Exception as e:
-        return descricao or "Sem resumo disponível."
+        return descricao or "Resumo não disponível."
 
 
 def buscar_hackathons_paraiba():
@@ -279,11 +308,11 @@ if __name__ == "__main__":
     print(f"  {len(hackathons)} hackathon(s) encontrado(s).")
 
     print("📰 Buscando notícias de IA...")
-    artigos_ia = buscar_noticias("inteligencia artificial", count=1)
+    artigos_ia = buscar_noticias("inteligencia artificial brasil", count=1)
     artigo_ia = artigos_ia[0] if artigos_ia else {}
 
     print("📰 Buscando notícias de tecnologia...")
-    artigos_tech = buscar_noticias("tecnologia", count=2)
+    artigos_tech = buscar_noticias("tecnologia brasil", count=2)
 
     print("✍️  Resumindo artigos com Gemini...")
     resumo_ia = resumir_artigo(
