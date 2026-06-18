@@ -1,125 +1,199 @@
 import base64
-import json
 import os
 import requests
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import google.generativeai as genai
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 # ─── Configuração ─────────────────────────────────────────────────────────────
 
-NEWSAPI_KEY   = os.environ["NEWSAPI_KEY"]
-DESTINATARIO  = os.environ.get("EMAIL_DESTINATARIO", "lukecosendey@gmail.com")
-REMETENTE     = os.environ.get("EMAIL_REMETENTE", "honeylabsai@gmail.com")
-
-# Query de notícias — ajuste conforme quiser
-NEWS_QUERY    = os.environ.get("NEWS_QUERY", "mercado financeiro brasil")
-NEWS_LANGUAGE = os.environ.get("NEWS_LANGUAGE", "pt")
-NEWS_COUNT    = int(os.environ.get("NEWS_COUNT", "8"))
+NEWSAPI_KEY       = os.environ["NEWSAPI_KEY"]
+GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
+DESTINATARIO      = os.environ.get("EMAIL_DESTINATARIO", "lukecosendey@gmail.com")
+REMETENTE         = os.environ.get("EMAIL_REMETENTE", "honeylabsai@gmail.com")
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+
+genai.configure(api_key=GEMINI_API_KEY)
 
 # ─── Gmail ────────────────────────────────────────────────────────────────────
 
 def get_gmail_service():
-    """Carrega credenciais dos secrets do GitHub e retorna o serviço Gmail."""
-    # No GitHub Actions, token.json e credentials.json vêm de secrets
     token_json = os.environ.get("GMAIL_TOKEN_JSON")
     if token_json:
         with open("token.json", "w") as f:
             f.write(token_json)
-
     creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        with open("token.json", "w") as f:
-            f.write(creds.to_json())
-
     return build("gmail", "v1", credentials=creds)
-
 
 # ─── NewsAPI ──────────────────────────────────────────────────────────────────
 
-def buscar_noticias():
-    if NEWS_QUERY:
-        url = "https://newsapi.org/v2/everything"
-        params = {
-            "q": NEWS_QUERY,
-            "language": NEWS_LANGUAGE,
-            "sortBy": "publishedAt",
-            "pageSize": NEWS_COUNT,
-            "apiKey": NEWSAPI_KEY,
-        }
-    else:
-        url = "https://newsapi.org/v2/top-headlines"
-        params = {
-            "country": "br" if NEWS_LANGUAGE == "pt" else "us",
-            "category": "business",
-            "pageSize": NEWS_COUNT,
-            "apiKey": NEWSAPI_KEY,
-        }
-    res = requests.get(url, params=params, timeout=10)
+def buscar_noticias(query, count=1):
+    """Busca artigos por query."""
+    params = {
+        "q": query,
+        "language": "pt",
+        "sortBy": "publishedAt",
+        "pageSize": count,
+        "apiKey": NEWSAPI_KEY,
+    }
+    res = requests.get("https://newsapi.org/v2/everything", params=params, timeout=10)
     res.raise_for_status()
     data = res.json()
     if data["status"] != "ok":
         raise RuntimeError(f"NewsAPI erro: {data}")
     return data["articles"]
 
+# ─── Gemini ───────────────────────────────────────────────────────────────────
 
-# ─── HTML do email ────────────────────────────────────────────────────────────
+def resumir_artigo(titulo, descricao, url):
+    """Usa Gemini para resumir o artigo em até 2 parágrafos."""
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    prompt = f"""Escreva um resumo em português do artigo abaixo em no máximo 2 parágrafos curtos.
+Seja objetivo e direto. Não use markdown, apenas texto simples.
+
+Título: {titulo}
+Descrição: {descricao}
+Link: {url}"""
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        return descricao or "Sem resumo disponível."
+
+
+def buscar_hackathons_paraiba():
+    """Usa Gemini com Google Search para buscar hackathons na Paraíba."""
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        tools="google_search_retrieval",
+    )
+    prompt = """Pesquise na internet sobre hackathons na Paraíba (Brasil) que:
+1. Ainda NÃO aconteceram (eventos futuros)
+2. As inscrições ainda estão abertas OU ainda não foram abertas
+
+Para cada hackathon encontrado, retorne EXATAMENTE neste formato JSON (lista):
+[
+  {
+    "nome": "Nome do hackathon",
+    "tema": "Tema principal",
+    "quando": "Data do evento",
+    "inscricoes": "Período de inscrições",
+    "requisitos": "Requisitos se houver, ou 'Não informado'",
+    "link": "Link para inscrição ou página oficial"
+  }
+]
+
+Se não encontrar nenhum hackathon futuro relevante, retorne: []
+Retorne APENAS o JSON, sem texto adicional."""
+
+    try:
+        response = model.generate_content(prompt)
+        texto = response.text.strip()
+        # Extrair JSON da resposta
+        import json, re
+        match = re.search(r'\[.*\]', texto, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+        return []
+    except Exception as e:
+        print(f"Erro ao buscar hackathons: {e}")
+        return []
+
+# ─── HTML ─────────────────────────────────────────────────────────────────────
 
 MESES_PT = ["janeiro","fevereiro","março","abril","maio","junho",
             "julho","agosto","setembro","outubro","novembro","dezembro"]
 
-def gerar_html(artigos):
+def card_noticia(artigo, resumo):
+    titulo    = artigo.get("title", "Sem título") or "Sem título"
+    url       = artigo.get("url", "#") or "#"
+    fonte     = artigo.get("source", {}).get("name", "") or ""
+    pub_raw   = artigo.get("publishedAt", "")
+    try:
+        pub = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
+        pub_str = pub.strftime("%d/%m %H:%M")
+    except Exception:
+        pub_str = ""
+
+    resumo_html = resumo.replace("\n", "<br>")
+
+    return f"""
+    <div style="background:#111;border-radius:12px;padding:20px 24px;
+                margin-bottom:16px;border-left:3px solid #FFD60A;">
+      <p style="margin:0 0 4px;color:#FFD60A;font-size:11px;
+                font-weight:700;letter-spacing:1px;text-transform:uppercase;">
+        {fonte}{' · ' + pub_str if pub_str else ''}
+      </p>
+      <a href="{url}" style="text-decoration:none;">
+        <h3 style="margin:0 0 10px;color:#fff;font-size:16px;
+                   font-weight:700;line-height:1.4;">{titulo}</h3>
+      </a>
+      <p style="margin:0;color:#aaa;font-size:13px;line-height:1.7;">{resumo_html}</p>
+    </div>"""
+
+
+def secao_hackathons(hackathons):
+    if not hackathons:
+        return ""
+
+    cards = ""
+    for h in hackathons:
+        req = h.get("requisitos", "Não informado")
+        req_html = f'<p style="margin:4px 0;color:#888;font-size:12px;">📋 <strong style="color:#ccc;">Requisitos:</strong> {req}</p>' if req and req != "Não informado" else ""
+        cards += f"""
+        <div style="background:#1a1a00;border-radius:12px;padding:20px 24px;
+                    margin-bottom:16px;border-left:3px solid #FFD60A;">
+          <p style="margin:0 0 6px;color:#FFD60A;font-size:11px;
+                    font-weight:700;letter-spacing:1px;text-transform:uppercase;">
+            🏆 Hackathon · Paraíba
+          </p>
+          <h3 style="margin:0 0 12px;color:#fff;font-size:17px;font-weight:700;">
+            {h.get("nome", "")}
+          </h3>
+          <p style="margin:4px 0;color:#888;font-size:12px;">🎯 <strong style="color:#ccc;">Tema:</strong> {h.get("tema", "")}</p>
+          <p style="margin:4px 0;color:#888;font-size:12px;">📅 <strong style="color:#ccc;">Quando:</strong> {h.get("quando", "")}</p>
+          <p style="margin:4px 0;color:#888;font-size:12px;">📝 <strong style="color:#ccc;">Inscrições:</strong> {h.get("inscricoes", "")}</p>
+          {req_html}
+          <a href="{h.get("link", "#")}" style="display:inline-block;margin-top:14px;
+             background:#FFD60A;color:#111;font-size:12px;font-weight:700;
+             padding:8px 16px;border-radius:8px;text-decoration:none;">
+            Saiba mais →
+          </a>
+        </div>"""
+
+    return f"""
+    <div style="margin-bottom:32px;">
+      <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
+                letter-spacing:2px;text-transform:uppercase;">
+        🏆 Hackathons na Paraíba
+      </p>
+      {cards}
+    </div>
+    <hr style="border:none;border-top:1px solid #222;margin-bottom:32px;">"""
+
+
+def gerar_html(artigo_ia, resumo_ia, artigos_tech, resumos_tech, hackathons):
     hoje = datetime.now()
     data_str = f"{hoje.day} de {MESES_PT[hoje.month - 1]} de {hoje.year}"
 
-    cards = ""
-    for a in artigos:
-        titulo     = a.get("title", "Sem título") or "Sem título"
-        descricao  = a.get("description", "") or ""
-        url        = a.get("url", "#") or "#"
-        fonte      = a.get("source", {}).get("name", "") or ""
-        pub_raw    = a.get("publishedAt", "")
-        try:
-            pub = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
-            pub_str = pub.strftime("%d/%m %H:%M")
-        except Exception:
-            pub_str = ""
-
-        cards += f"""
-        <div style="background:#111; border-radius:12px; padding:20px 24px;
-                    margin-bottom:16px; border-left:3px solid #FFD60A;">
-          <p style="margin:0 0 4px; color:#FFD60A; font-size:11px;
-                    font-weight:700; letter-spacing:1px; text-transform:uppercase;">
-            {fonte}{' · ' + pub_str if pub_str else ''}
-          </p>
-          <a href="{url}" style="text-decoration:none;">
-            <h3 style="margin:0 0 8px; color:#fff; font-size:16px;
-                       font-weight:700; line-height:1.4;">{titulo}</h3>
-          </a>
-          <p style="margin:0; color:#888; font-size:13px; line-height:1.6;">
-            {descricao}
-          </p>
-        </div>
-        """
+    card_ia = card_noticia(artigo_ia, resumo_ia)
+    cards_tech = "".join(card_noticia(a, r) for a, r in zip(artigos_tech, resumos_tech))
 
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0a0a0a;
-             font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0"
-         style="background:#0a0a0a;padding:40px 20px;">
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0"
-             style="max-width:600px;width:100%;">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
         <!-- Header -->
         <tr><td style="background:#111;border-radius:16px 16px 0 0;
@@ -128,17 +202,14 @@ def gerar_html(artigos):
             <tr>
               <td>
                 <p style="margin:0;color:#FFD60A;font-size:11px;font-weight:700;
-                          letter-spacing:3px;text-transform:uppercase;">
-                  Honey Labs
-                </p>
-                <h1 style="margin:8px 0 0;color:#fff;font-size:24px;
-                           font-weight:700;">📰 Notícias do dia</h1>
+                          letter-spacing:3px;text-transform:uppercase;">Honey Labs</p>
+                <h1 style="margin:8px 0 0;color:#fff;font-size:24px;font-weight:700;">
+                  📰 Notícias do dia
+                </h1>
               </td>
               <td align="right">
-                <div style="background:#FFD60A;border-radius:12px;
-                            padding:10px 16px;display:inline-block;">
-                  <p style="margin:0;color:#111;font-size:11px;
-                            font-weight:700;">{data_str}</p>
+                <div style="background:#FFD60A;border-radius:12px;padding:10px 16px;">
+                  <p style="margin:0;color:#111;font-size:11px;font-weight:700;">{data_str}</p>
                 </div>
               </td>
             </tr>
@@ -147,19 +218,29 @@ def gerar_html(artigos):
 
         <!-- Body -->
         <tr><td style="background:#111;padding:32px 40px;">
-          <p style="margin:0 0 24px;color:#666;font-size:13px;">
-            {len(artigos)} notícias sobre: <em>{NEWS_QUERY}</em>
-          </p>
-          {cards}
+
+          {secao_hackathons(hackathons)}
+
+          <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
+                    letter-spacing:2px;text-transform:uppercase;">🤖 Inteligência Artificial</p>
+          {card_ia}
+
+          <hr style="border:none;border-top:1px solid #222;margin:24px 0;">
+
+          <p style="margin:0 0 16px;color:#FFD60A;font-size:12px;font-weight:700;
+                    letter-spacing:2px;text-transform:uppercase;">💻 Tecnologia</p>
+          {cards_tech}
+
         </td></tr>
 
         <!-- Footer -->
         <tr><td style="background:#0d0d0d;border-radius:0 0 16px 16px;
                        padding:20px 40px;border-top:1px solid #1a1a1a;">
           <p style="margin:0;color:#444;font-size:12px;">
-            Enviado automaticamente ·
-            <a href="https://www.honeylabs.com.br"
-               style="color:#FFD60A;text-decoration:none;">Honey Labs</a>
+            Resumos gerados por Gemini · Notícias via NewsAPI ·
+            <a href="https://www.honeylabs.com.br" style="color:#FFD60A;text-decoration:none;">
+              Honey Labs
+            </a>
           </p>
         </td></tr>
 
@@ -169,12 +250,11 @@ def gerar_html(artigos):
 </body>
 </html>"""
 
-
 # ─── Envio ────────────────────────────────────────────────────────────────────
 
-def enviar_email(service, html, total):
+def enviar_email(service, html):
     hoje = datetime.now()
-    assunto = f"📰 Notícias do mercado — {hoje.strftime('%d/%m/%Y')} ({total} artigos)"
+    assunto = f"📰 Tech & IA — {hoje.strftime('%d/%m/%Y')}"
 
     msg = MIMEMultipart("alternative")
     msg["To"]      = DESTINATARIO
@@ -187,16 +267,33 @@ def enviar_email(service, html, total):
     result = service.users().messages().send(userId="me", body={"raw": raw}).execute()
     print(f"✅ Email enviado! ID: {result['id']}")
 
-
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("Buscando notícias...")
-    artigos = buscar_noticias()
-    print(f"{len(artigos)} artigos encontrados.")
+    print("🔍 Buscando hackathons na Paraíba...")
+    hackathons = buscar_hackathons_paraiba()
+    print(f"  {len(hackathons)} hackathon(s) encontrado(s).")
 
-    print("Conectando ao Gmail...")
+    print("📰 Buscando notícias de IA...")
+    artigos_ia = buscar_noticias("inteligencia artificial", count=1)
+    artigo_ia = artigos_ia[0] if artigos_ia else {}
+
+    print("📰 Buscando notícias de tecnologia...")
+    artigos_tech = buscar_noticias("tecnologia", count=2)
+
+    print("✍️  Resumindo artigos com Gemini...")
+    resumo_ia = resumir_artigo(
+        artigo_ia.get("title", ""),
+        artigo_ia.get("description", ""),
+        artigo_ia.get("url", ""),
+    ) if artigo_ia else ""
+
+    resumos_tech = [
+        resumir_artigo(a.get("title", ""), a.get("description", ""), a.get("url", ""))
+        for a in artigos_tech
+    ]
+
+    print("📧 Montando e enviando email...")
     service = get_gmail_service()
-
-    html = gerar_html(artigos)
-    enviar_email(service, html, len(artigos))
+    html = gerar_html(artigo_ia, resumo_ia, artigos_tech, resumos_tech, hackathons)
+    enviar_email(service, html)
