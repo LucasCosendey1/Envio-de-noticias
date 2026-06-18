@@ -46,14 +46,23 @@ def get_gmail_service():
 # ─── NewsAPI ──────────────────────────────────────────────────────────────────
 
 def buscar_noticias():
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": NEWS_QUERY,
-        "language": NEWS_LANGUAGE,
-        "sortBy": "publishedAt",
-        "pageSize": NEWS_COUNT,
-        "apiKey": NEWSAPI_KEY,
-    }
+    if NEWS_QUERY:
+        url = "https://newsapi.org/v2/everything"
+        params = {
+            "q": NEWS_QUERY,
+            "language": NEWS_LANGUAGE,
+            "sortBy": "publishedAt",
+            "pageSize": NEWS_COUNT,
+            "apiKey": NEWSAPI_KEY,
+        }
+    else:
+        url = "https://newsapi.org/v2/top-headlines"
+        params = {
+            "country": "br" if NEWS_LANGUAGE == "pt" else "us",
+            "category": "business",
+            "pageSize": NEWS_COUNT,
+            "apiKey": NEWSAPI_KEY,
+        }
     res = requests.get(url, params=params, timeout=10)
     res.raise_for_status()
     data = res.json()
